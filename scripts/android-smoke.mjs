@@ -34,6 +34,22 @@ async function screenContaining(text) {
   throw new Error("Screen did not contain: " + text);
 }
 launch();
+const webview = adb("shell", "dumpsys", "webviewupdate");
+writeFileSync("android-evidence/webview.txt", webview);
+const webviewVersion = Number(
+  webview.match(/Current WebView package[^\n]*,\s*(\d+)\./)?.[1] || 0,
+);
+if (!webviewVersion)
+  throw new Error("Could not determine emulator WebView version");
+if (webviewVersion < 108) {
+  await screenContaining("Update Android System WebView");
+  capture("webview-update");
+  writeFileSync(
+    "android-evidence/result.txt",
+    "PASS: obsolete WebView displays an actionable update screen. App workflows require WebView 108 or later; not exercised on this image.\n",
+  );
+  process.exit(0);
+}
 await screenContaining("Sign in");
 capture("login");
 adb("shell", "input", "keyevent", "4");

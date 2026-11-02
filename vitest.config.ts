@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["tests/*.test.ts"],
+    testTimeout: process.env.TEST_DATABASE_URL ? 30000 : 5000,
     coverage: {
       provider: "v8",
       include: ["server/domain.ts"],
