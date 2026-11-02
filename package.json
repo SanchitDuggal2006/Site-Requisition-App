@@ -1,0 +1,52 @@
+{
+  "name": "site-requisitions",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run tests/database.test.ts",
+    "test:e2e": "playwright test",
+    "preview": "wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "db:migrate": "node --env-file=.env scripts/migrate.mjs",
+    "android:prepare": "node scripts/android.mjs",
+    "lint": "tsc --noEmit && prettier --check ."
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/share": "^8.0.0",
+    "@neondatabase/serverless": "^1.0.2",
+    "exceljs": "^4.4.0",
+    "hono": "^4.10.0",
+    "jspdf": "^4.2.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.0.0",
+    "@cloudflare/workers-types": "^5.20261101.1",
+    "@electric-sql/pglite": "^0.3.14",
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "@vitest/coverage-v8": "^5.0.5",
+    "pg": "^8.16.3",
+    "prettier": "^3.9.10",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.0",
+    "vitest": "^5.0.5",
+    "wrangler": "^4.45.0"
+  }
+}

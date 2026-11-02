@@ -1,0 +1,10 @@
+node_modules
+dist
+android-app/android
+android-app/www
+android-app/package.json
+android-app/capacitor.config.json
+coverage
+test-results
+playwright-report
+package-lock.json
