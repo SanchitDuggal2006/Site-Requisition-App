@@ -20,3 +20,5 @@ keytool -genkeypair -v -keystore release.jks -alias site-requisitions -keyalg RS
 The native wrapper denies cleartext app traffic and keeps navigation inside the configured HTTPS origin. External HTTP(S) links open in the system browser. Failed top-level loads show a native Retry page. Hardware back is handled by the App plugin: nested screens go back; the root exits. Report files are written to the app cache and shared through the Android file provider. No broad storage permission is needed.
 
 Before distribution complete DEVICE_TEST_CHECKLIST.md on API 26 and current Android, and verify `apksigner verify --verbose`. Optional Play distribution requires a separate Google Play developer account and review; it is not part of this free APK-sharing setup.
+
+Android 8 or newer requires Android System WebView/Chrome 108 or newer. An obsolete engine shows a native update message with a Play Store link. Update the system engine and reopen the app. The Android 8 emulator check verifies that message, not app workflows on an obsolete engine.

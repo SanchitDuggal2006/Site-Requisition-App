@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, writeFileSync } from "node:fs";
 const id = "com.sanchitduggal.siterequisitions";
-const adb = (...args) => execFileSync("adb", args, { encoding: "utf8" });
+const adb = (...args) =>
+  execFileSync("adb", args, { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 mkdirSync("android-evidence", { recursive: true });
 const apk = readdirSync("apk").find((n) => n.endsWith(".apk"));
@@ -26,7 +27,10 @@ async function screenContaining(text) {
     await pause(1500);
   }
   capture("failure");
-  writeFileSync("android-evidence/logcat.txt", adb("logcat", "-d"));
+  writeFileSync(
+    "android-evidence/logcat.txt",
+    adb("logcat", "-d", "-t", "2000"),
+  );
   writeFileSync(
     "android-evidence/webview.txt",
     adb("shell", "dumpsys", "webviewupdate"),

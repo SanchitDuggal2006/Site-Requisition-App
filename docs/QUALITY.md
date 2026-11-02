@@ -1,33 +1,30 @@
 # Quality and release status
 
-This is an implementation in progress, not yet a production release. Do not distribute a placeholder/debug APK as the completed application.
-
-## Verified locally on 2 November 2026
+## Verified on 2 November 2026
 
 - TypeScript and Vite production build pass.
-- 7 domain tests pass (state graph, PIN/phone rules, date boundaries, quantities, derived item status and overdue).
-- 10 embedded PostgreSQL/API tests pass; one concurrency test deliberately runs only on real PostgreSQL.
-- All 11 real PostgreSQL tests pass against a separate Neon database named `site_requisitions_test`, including concurrent approval exclusivity. The production schema was initialized separately with no test users/requests.
-- High/critical dependency advisories found in the initial PDF/test dependencies were resolved by upgrading. Ten moderate transitive advisories remain in build/file-export dependencies; review before release. No blanket unsafe audit downgrades were applied.
+- Seven domain tests pass; domain coverage is 100% lines/statements/functions and 95.65% branches.
+- All 14 database/API tests pass against the separate Neon site_requisitions_test database, including concurrency, role/site permissions and director handover. Remote runs allow 30 seconds per test for network round trips.
+- Four mobile-browser workflow tests pass: request/approval/partial dispatch/partial receipt/completion; rejection/copy/cancellation; site/user administration; forced PIN changes. PDF and Excel download checks pass.
+- Automated WCAG A/AA checks on login, director dashboard and report pass. These do not replace manual accessibility testing.
+- Cloudflare deployment, restricted database role, live health/login/session/logout and the initial director's mandatory PIN-change restriction were checked. Production contains no sample requests or users.
+- A signed release APK compiled and passed signature verification. Android 14 emulator checks passed for live login, root Back and offline Retry.
+- The old Android 8 image showed a blank page with its obsolete WebView. A native update message now requires WebView 108 or newer. Rebuilt APK verification is recorded in the Android device workflow; Android 8 business workflows with an updated WebView still require a physical-device check.
+- No high/critical npm advisories at dependency review; ten moderate transitive advisories remain. Build/file-export dependencies need ongoing maintenance.
 
-## In progress / not verified
+## Physical-device acceptance still required
 
-- Mobile Playwright workflow and PDF/Excel downloads: tests implemented, fixing issues found by first run.
-- Complete endpoint/role/assignment permission matrix: partial coverage, requires expansion.
-- Coverage threshold: configured for domain logic; measurement pending.
-- Native Android compilation, signed release verification, emulator/offline/back tests: pending.
-- Live Cloudflare runtime and free CPU allowance: pending deployment authorization.
-- Physical phones and performance/accessibility audits: pending.
-- Initial production director and private temporary PIN: not yet created.
+Install the signed APK on the owner's phone before general rollout. Check first PIN change, a sample request through delivery, PDF/Excel sharing to another app, nested Back, keyboard and pull-to-refresh. Check the team's oldest phone with its updated WebView. See DEVICE_TEST_CHECKLIST.md. This release is ready for that pilot, not a claim that all physical-device checks have been completed.
 
-## Loop review
+## Refresh and data integrity
 
-Application source has no timers, intervals, recurring polling, recursive redirects or effects that depend on their own updated data. Refresh happens on navigation, user gesture/button, or returning to the app. Load epochs discard stale responses. Local drafts persist independently of network requests. Native Retry is user initiated. Hardware-back behavior is implemented but must still be tested on Android.
+Application source has no recurring polling. Refresh happens on navigation, user gesture/button or returning to the app. Load epochs discard stale responses. Local drafts survive refresh. Native Retry is user initiated. Submission keys prevent duplicate requests; row locks and version checks protect approval and quantity updates. List endpoints do not silently truncate records.
 
-## Known limitations to resolve or explicitly accept
+## Operational limitations
 
-- List endpoints currently cap request/item results; pagination must replace silent truncation before a long-lived deployment.
-- Lost/damaged/returned dispatched material and clerical correction flows are not included in this version. Outstanding dispatched quantities remain visible rather than being silently cancelled.
-- Generated PDF uses standard Latin fonts; English-only scope applies.
-- Automated independent backup scheduling is not configured; manual backup/restore instructions are provided.
-- Tests use synthetic credentials only. Production credentials are never committed.
+- Internet is required for shared data and initial app loading; this is not a fully offline application.
+- Lost/damaged/returned dispatched material and clerical correction flows are not included. Outstanding dispatched quantities remain visible.
+- English-only PDF fonts. No photos, attachments, WhatsApp automation or price accounting.
+- Independent scheduled backups are not configured; README includes manual backup and restore instructions. Google Drive can hold exported reports or encrypted backups manually.
+- Free cloud quotas can change; check provider dashboards before increasing usage. Large datasets will need server-side pagination.
+- Production credentials and signing material are excluded from the public repository. Keep the private signing backup to preserve APK update compatibility.
