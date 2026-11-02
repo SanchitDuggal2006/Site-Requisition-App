@@ -28,3 +28,5 @@ Application source has no recurring polling. Refresh happens on navigation, user
 - Independent scheduled backups are not configured; README includes manual backup and restore instructions. Google Drive can hold exported reports or encrypted backups manually.
 - Free cloud quotas can change; check provider dashboards before increasing usage. Large datasets will need server-side pagination.
 - Production credentials and signing material are excluded from the public repository. Keep the private signing backup to preserve APK update compatibility.
+
+Final signed APK build: https://github.com/SanchitDuggal2006/Site-Requisition-App/actions/runs/41477675090 . Final emulator run: https://github.com/SanchitDuggal2006/Site-Requisition-App/actions/runs/41478283425 . Both emulator jobs passed: Android 14 live login/Back/offline, and Android 8 obsolete-WebView update guidance (image WebView 69). APK SHA256: FA5C7AAFF4C2B66DEDBAA7D260703009107827B5B419805E20DBA048A5CC4BFD.
