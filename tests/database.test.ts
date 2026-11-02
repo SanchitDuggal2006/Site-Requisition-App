@@ -360,4 +360,139 @@ describe("database invariants and API", () => {
       ).toHaveLength(1);
     },
   );
+  it("checks read permissions for every role and site assignment", async () => {
+    const app = createApp(query);
+    for (const role of [
+      "director",
+      "manager",
+      "supervisor",
+      "purchase",
+      "outsider",
+    ]) {
+      const token = "matrix-" + role;
+      await query(
+        "INSERT INTO sessions VALUES($1,$2,'matrix-csrf',now()+interval '1 day')",
+        [await digest(token), ids[role]],
+      );
+      const get = (path: string) =>
+        app.request(
+          "https://app.test/api" + path,
+          { headers: { Cookie: "sr_session=" + token } },
+          { DATABASE_URL: "", BUSINESS_TZ: "Asia/Kolkata" },
+        );
+      expect((await get("/users")).status).toBe(
+        role === "director" ? 200 : 403,
+      );
+      expect((await get("/requisitions/" + req)).status).toBe(
+        role === "outsider" ? 404 : 200,
+      );
+      const sites = await (await get("/sites")).json();
+      expect(sites.length).toBe(
+        ["director", "purchase"].includes(role) ? 2 : 1,
+      );
+      const report = await (await get("/report?site=" + ids.site)).json();
+      if (role === "outsider") {
+        expect(report.raised).toHaveLength(0);
+        expect(report.activity).toHaveLength(0);
+        expect(report.open).toHaveLength(0);
+      }
+      for (const path of ["/sites", "/users"]) {
+        if (role === "director") continue;
+        const response = await app.request(
+          "https://app.test/api" + path,
+          {
+            method: "POST",
+            headers: {
+              Cookie: "sr_session=" + token,
+              Origin: "https://app.test",
+              "Content-Type": "application/json",
+              "X-CSRF-Token": "matrix-csrf",
+            },
+            body: "{}",
+          },
+          { DATABASE_URL: "", BUSINESS_TZ: "Asia/Kolkata" },
+        );
+        expect(response.status).toBe(403);
+      }
+    }
+  });
+  it("checks every workflow action across roles, with unassigned-site denial", async () => {
+    for (const role of [
+      "director",
+      "manager",
+      "supervisor",
+      "purchase",
+      "outsider",
+    ]) {
+      const pending = await create();
+      const approval = query(
+        "SELECT transition_requisition($1,$2,'APPROVED','')",
+        [ids[role], pending],
+      );
+      if (["director", "manager"].includes(role)) await approval;
+      else {
+        await expect(approval).rejects.toThrow("FORBIDDEN");
+        await query("SELECT transition_requisition($1,$2,'APPROVED','')", [
+          ids.director,
+          pending,
+        ]);
+      }
+      const iid = (
+        await query("SELECT id FROM items WHERE requisition_id=$1", [pending])
+      )[0].id;
+      const order = query(
+        "SELECT transition_item($1,$2,0,'ORDERED',NULL,'','')",
+        [ids[role], iid],
+      );
+      if (["director", "purchase"].includes(role)) await order;
+      else {
+        await expect(order).rejects.toThrow("FORBIDDEN");
+        await query("SELECT transition_item($1,$2,0,'ORDERED',NULL,'','')", [
+          ids.purchase,
+          iid,
+        ]);
+      }
+      const dispatch = query(
+        "SELECT transition_item($1,$2,1,'DISPATCHED',5,'','')",
+        [ids[role], iid],
+      );
+      if (["director", "purchase"].includes(role)) await dispatch;
+      else {
+        await expect(dispatch).rejects.toThrow("FORBIDDEN");
+        await query("SELECT transition_item($1,$2,1,'DISPATCHED',5,'','')", [
+          ids.purchase,
+          iid,
+        ]);
+      }
+      const receipt = query(
+        "SELECT transition_item($1,$2,2,'RECEIVED',5,'','')",
+        [ids[role], iid],
+      );
+      if (["director", "supervisor"].includes(role)) await receipt;
+      else await expect(receipt).rejects.toThrow("FORBIDDEN");
+    }
+  }, 30000);
+  it("supports director handover and invalidates reset-PIN sessions", async () => {
+    const second = crypto.randomUUID();
+    await query(
+      "INSERT INTO users(id,name,phone,role,pin_hash) VALUES($1,'Second director','+919000000099','DIRECTOR',$2)",
+      [second, pinHash],
+    );
+    await query("UPDATE users SET active=false WHERE id=$1", [ids.director]);
+    await expect(
+      query("UPDATE users SET active=false WHERE id=$1", [second]),
+    ).rejects.toThrow("LAST_DIRECTOR");
+    await query("UPDATE users SET active=true WHERE id=$1", [ids.director]);
+    await query(
+      "INSERT INTO sessions VALUES('reset-test',$1,'csrf',now()+interval '1 day')",
+      [second],
+    );
+    await query(
+      "UPDATE users SET pin_hash=crypt('749182',gen_salt('bf',4)) WHERE id=$1",
+      [second],
+    );
+    expect(
+      await query("SELECT * FROM sessions WHERE token_hash='reset-test'"),
+    ).toHaveLength(0);
+  });
 });

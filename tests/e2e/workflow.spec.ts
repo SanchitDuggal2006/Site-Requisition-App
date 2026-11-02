@@ -69,6 +69,22 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
     path: "test-results/report-mobile.png",
     fullPage: true,
   });
+  await logout(page);
+  await login(page, 3);
+  await page.getByRole("button", { name: "In progress", exact: false }).click();
+  await page.getByRole("button", { name: /18 mm plywood/ }).click();
+  await page.getByRole("button", { name: "Record dispatch" }).click();
+  await page.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Record dispatch" }),
+  ).not.toBeVisible();
+  await logout(page);
+  await login(page, 2);
+  await page.getByRole("button", { name: /Pilot - Sample Site/ }).click();
+  await page.getByRole("button", { name: /MR-000001/ }).click();
+  await page.getByRole("button", { name: "Confirm receipt" }).click();
+  await page.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(page.getByText("Delivered", { exact: true })).toBeVisible();
 });
 test("director can add a site and delegate its approval", async ({ page }) => {
   await login(page, 0);
@@ -87,4 +103,75 @@ test("director can add a site and delegate its approval", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Edit user" }),
   ).not.toBeVisible();
+});
+
+test("rejection can be copied into a new request and the new request can be cancelled", async ({
+  page,
+}) => {
+  await login(page, 2);
+  await page.getByRole("button", { name: /Pilot - Sample Site/ }).click();
+  await page.getByRole("button", { name: "+ New requisition" }).click();
+  await page.getByLabel("Material description").fill("Cement");
+  await page.getByLabel("Quantity", { exact: true }).fill("5");
+  await page.getByRole("button", { name: "Submit requisition" }).click();
+  await expect(page.getByRole("heading", { name: "MR-000002" })).toBeVisible();
+  await logout(page);
+  await login(page, 1);
+  await page.getByRole("button", { name: /MR-000002/ }).click();
+  await page.getByRole("button", { name: "Reject", exact: true }).click();
+  await page.getByLabel("Reason for rejection").fill("Confirm grade first");
+  await page.getByRole("button", { name: "Confirm rejection" }).click();
+  await expect(
+    page.getByText("Rejected", { exact: true }).first(),
+  ).toBeVisible();
+  await logout(page);
+  await login(page, 2);
+  await page.getByRole("button", { name: /Pilot - Sample Site/ }).click();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await page.getByRole("button", { name: /MR-000002/ }).click();
+  await page.getByRole("button", { name: "Copy as new requisition" }).click();
+  await expect(page.getByLabel("Material description")).toHaveValue("Cement");
+  await page.getByRole("button", { name: "Submit requisition" }).click();
+  await expect(page.getByRole("heading", { name: "MR-000003" })).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Cancel requisition", exact: true })
+    .click();
+  await expect(
+    page.getByText("Cancelled", { exact: true }).first(),
+  ).toBeVisible();
+});
+
+test("new team member must change the temporary PIN before accessing a site", async ({
+  page,
+}) => {
+  await login(page, 0);
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  await page.getByRole("button", { name: "+ Add user" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("New sample supervisor");
+  await page.getByLabel("Mobile number").fill("9000000010");
+  await page.getByLabel("Pilot - Sample Site").check();
+  await page.getByLabel("Temporary PIN").fill("749182");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: /New sample supervisor/ }),
+  ).toBeVisible();
+  await logout(page);
+  await page.getByLabel("Mobile number").fill("9000000010");
+  await page.getByLabel("Six-digit PIN").fill("749182");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Set your own PIN" }),
+  ).toBeVisible();
+  await page.getByLabel("Current PIN", { exact: true }).fill("749182");
+  await page.getByLabel("New PIN", { exact: true }).fill("638291");
+  await page.getByLabel("Confirm new PIN", { exact: true }).fill("638291");
+  await page.getByRole("button", { name: "Save PIN" }).click();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+  await page.getByLabel("Mobile number").fill("9000000010");
+  await page.getByLabel("Six-digit PIN").fill("638291");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: /Pilot - Sample Site/ }),
+  ).toBeVisible();
 });
