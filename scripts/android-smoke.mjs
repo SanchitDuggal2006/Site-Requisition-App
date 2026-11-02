@@ -16,12 +16,21 @@ const capture = (name) => {
 };
 async function screenContaining(text) {
   for (let n = 0; n < 30; n++) {
-    adb("shell", "uiautomator", "dump", "/sdcard/sr-window.xml");
-    const xml = adb("shell", "cat", "/sdcard/sr-window.xml");
-    if (xml.toLowerCase().includes(text.toLowerCase())) return xml;
+    try {
+      adb("shell", "uiautomator", "dump", "/sdcard/sr-window.xml");
+      const xml = adb("shell", "cat", "/sdcard/sr-window.xml");
+      if (xml.toLowerCase().includes(text.toLowerCase())) return xml;
+    } catch {
+      /* Accessibility service may not be ready immediately after launch. */
+    }
     await pause(1500);
   }
   capture("failure");
+  writeFileSync("android-evidence/logcat.txt", adb("logcat", "-d"));
+  writeFileSync(
+    "android-evidence/webview.txt",
+    adb("shell", "dumpsys", "webviewupdate"),
+  );
   throw new Error("Screen did not contain: " + text);
 }
 launch();
