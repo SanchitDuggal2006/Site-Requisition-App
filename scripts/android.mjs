@@ -62,8 +62,8 @@ run(["sync", "android"]);
 let vars = await readFile(new URL("android/variables.gradle", dir), "utf8");
 vars = vars
   .replace(/minSdkVersion = \d+/, "minSdkVersion = 26")
-  .replace(/compileSdkVersion = \d+/, "compileSdkVersion = 37")
-  .replace(/targetSdkVersion = \d+/, "targetSdkVersion = 37");
+  .replace(/compileSdkVersion = \d+/, "compileSdkVersion = 36")
+  .replace(/targetSdkVersion = \d+/, "targetSdkVersion = 36");
 await writeFile(new URL("android/variables.gradle", dir), vars);
 let manifest = await readFile(
   new URL("android/app/src/main/AndroidManifest.xml", dir),
