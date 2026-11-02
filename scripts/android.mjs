@@ -75,7 +75,7 @@ manifest = manifest
     'android:allowBackup="false" android:usesCleartextTraffic="false"',
   )
   .replace(
-    'android:launchMode="singleTask"',
+    /android:launchMode="singleTask"(?: android:screenOrientation="portrait")*/,
     'android:launchMode="singleTask" android:screenOrientation="portrait"',
   );
 await writeFile(
@@ -120,3 +120,17 @@ await writeFile(
   manifest,
 );
 console.log("Android wrapper prepared for " + appUrl);
+await writeFile(
+  new URL("android/app/src/main/res/values/styles.xml", dir),
+  `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+ <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
+  <item name="colorPrimary">#21583d</item><item name="colorPrimaryDark">#f6f7f9</item><item name="colorAccent">#21583d</item>
+  <item name="android:windowLightStatusBar">true</item><item name="android:statusBarColor">#f6f7f9</item>
+ </style>
+ <style name="AppTheme.NoActionBar" parent="AppTheme"><item name="windowActionBar">false</item><item name="windowNoTitle">true</item></style>
+ <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+  <item name="windowSplashScreenBackground">#f6f7f9</item><item name="windowSplashScreenAnimatedIcon">@drawable/ic_site</item><item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
+ </style>
+</resources>`,
+);
