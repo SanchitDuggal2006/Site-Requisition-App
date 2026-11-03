@@ -789,3 +789,10 @@ nav .selected {
 .report-section > summary::marker {
   color: var(--brand);
 }
+
+.detail-workspace {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}

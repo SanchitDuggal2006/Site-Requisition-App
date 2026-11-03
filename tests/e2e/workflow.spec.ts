@@ -45,6 +45,11 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
     .getByLabel("Supplier / delivery contact (optional)")
     .fill("Test desk 9000000099");
   await page.getByRole("button", { name: "Confirm", exact: true }).click();
+  await page.getByRole("button", { name: "Update delivery · batch 1" }).click();
+  await page.getByLabel("Delivery status").selectOption("DELAYED");
+  await page.getByLabel("Expected delivery").fill("2099-01-01");
+  await page.getByRole("button", { name: "Confirm", exact: true }).click();
+  await expect(page.getByText("Delayed", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Record dispatch" }).click();
   await page.getByLabel(/Quantity \(sheet\)/).fill("12");
   await page.getByRole("button", { name: "Confirm", exact: true }).click();
@@ -96,6 +101,10 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
   await expect(
     page.getByText("Delivered", { exact: true }).first(),
   ).toBeVisible();
+  await logout(page);
+  await login(page, 3);
+  await page.getByRole("button", { name: /History/ }).click();
+  await expect(page.getByRole("button", { name: /MR-000001/ })).toBeVisible();
 });
 test("director can add a site and delegate its approval", async ({ page }) => {
   await login(page, 0);

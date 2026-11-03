@@ -428,6 +428,7 @@ function Workspace({
     [copy, setCopy] = useState<Row | null>(null);
   const epoch = useRef(0);
   const [loadedRoute, setLoadedRoute] = useState("");
+  const [loadedRevision, setLoadedRevision] = useState(-1);
   useEffect(() => {
     const current = ++epoch.current;
     setLoading(true);
@@ -479,6 +480,7 @@ function Workspace({
         if (current === epoch.current) {
           setLoading(false);
           setLoadedRoute(route);
+          setLoadedRevision(revision);
           onLoading(false);
         }
       }
@@ -561,18 +563,23 @@ function Workspace({
             </>
           ) : route.startsWith("/request/") ? (
             detail && (
-              <Detail
-                detail={detail}
-                user={user}
-                day={day}
-                timezone={timezone}
-                refresh={refresh}
-                go={go}
-                onCopy={() => {
-                  setCopy(detail);
-                  go("/new/" + detail.site_id);
-                }}
-              />
+              <fieldset
+                className="detail-workspace"
+                disabled={loading || loadedRevision !== revision}
+              >
+                <Detail
+                  detail={detail}
+                  user={user}
+                  day={day}
+                  timezone={timezone}
+                  refresh={refresh}
+                  go={go}
+                  onCopy={() => {
+                    setCopy(detail);
+                    go("/new/" + detail.site_id);
+                  }}
+                />
+              </fieldset>
             )
           ) : route.startsWith("/site/") ? (
             <>
@@ -660,7 +667,7 @@ function Workspace({
               )}
               <h2>Material follow-up</h2>
               <div className="tabs">
-                {["To order", "In progress"].map((t) => (
+                {["To order", "In progress", "History"].map((t) => (
                   <button
                     className={purchaseTab === t ? "selected" : ""}
                     key={t}
@@ -669,23 +676,34 @@ function Workspace({
                     {t}{" "}
                     <span className="count">
                       {
-                        items.filter((i) =>
-                          t === "To order"
-                            ? Number(i.ordered_quantity) + Number(i.cancelled) <
-                              Number(i.quantity)
-                            : Number(i.ordered_quantity) > Number(i.received),
+                        (t === "History"
+                          ? requests.filter((r) => r.status === "APPROVED")
+                          : items.filter((i) =>
+                              t === "To order"
+                                ? Number(i.ordered_quantity) +
+                                    Number(i.cancelled) <
+                                  Number(i.quantity)
+                                : Number(i.ordered_quantity) >
+                                  Number(i.received),
+                            )
                         ).length
                       }
                     </span>
                   </button>
                 ))}
               </div>
-              {items.filter((i) =>
-                purchaseTab === "To order"
-                  ? Number(i.ordered_quantity) + Number(i.cancelled) <
-                    Number(i.quantity)
-                  : Number(i.ordered_quantity) > Number(i.received),
-              ).length === 0 ? (
+              {purchaseTab === "History" ? (
+                <RequestList
+                  rows={requests.filter((r) => r.status === "APPROVED")}
+                  go={go}
+                  grouped
+                />
+              ) : items.filter((i) =>
+                  purchaseTab === "To order"
+                    ? Number(i.ordered_quantity) + Number(i.cancelled) <
+                      Number(i.quantity)
+                    : Number(i.ordered_quantity) > Number(i.received),
+                ).length === 0 ? (
                 <Empty>No items here. You’re up to date.</Empty>
               ) : (
                 items
@@ -955,6 +973,9 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
   const [action, setAction] = useState<Row | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  useEffect(() => {
+    setAction(null);
+  }, [d.id, d.items.map((i: Row) => i.id + ":" + i.version).join("|")]);
   const director = user.role === "DIRECTOR";
   async function status(status: string, reason = "") {
     setBusy(true);
@@ -1193,6 +1214,12 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
               {label(e.action)}
               {e.quantity ? " · " + number(e.quantity) : ""}
             </strong>
+            {e.item_id && (
+              <span>
+                {d.items.find((i: Row) => i.id === e.item_id)?.description} ·{" "}
+                {d.items.find((i: Row) => i.id === e.item_id)?.unit}
+              </span>
+            )}
             <span>
               {e.actor_name} ·{" "}
               {new Date(e.created_at).toLocaleString("en-IN", {
@@ -1315,10 +1342,11 @@ function ItemAction({ action: a, onClose, onDone }: any) {
               type="date"
               required={a.type === "ORDERED"}
               defaultValue={
-                b?.expected_by?.slice(0, 10) ||
-                new Date().toLocaleDateString("en-CA", {
-                  timeZone: "Asia/Kolkata",
-                })
+                b
+                  ? b.expected_by?.slice(0, 10) || ""
+                  : new Date().toLocaleDateString("en-CA", {
+                      timeZone: "Asia/Kolkata",
+                    })
               }
             />
           </label>

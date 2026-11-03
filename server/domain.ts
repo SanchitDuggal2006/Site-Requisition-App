@@ -141,10 +141,7 @@ export const userSchema = z.object({
   phone: phoneSchema,
   role: z.enum(roles),
   siteIds: z.array(z.uuid()).max(100),
-  pin: z
-    .string()
-    .regex(/^\d{6}$/, "Use six digits")
-    .optional(),
+  pin: pinSchema.optional(),
   active: z.boolean().default(true),
 });
 export function itemStatus(i: {

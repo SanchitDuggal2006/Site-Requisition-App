@@ -39,6 +39,8 @@ describe("business rules", () => {
     ])
       expect(pinSchema.safeParse(pin).success).toBe(false);
     expect(pinSchema.safeParse("681429").success).toBe(true);
+    expect(pinSchema.safeParse("121212").success).toBe(true);
+    expect(pinSchema.safeParse("112233").success).toBe(true);
   });
   it("uses business midnight, not UTC midnight", () => {
     expect(today("Asia/Kolkata", new Date("2026-11-02T18:29:59Z"))).toBe(

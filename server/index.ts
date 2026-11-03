@@ -272,7 +272,10 @@ export function createApp(override?: Query) {
     );
     if (!rows.length)
       return c.json(
-        { error: "This site changed. Refresh and try again." },
+        {
+          error:
+            "This site changed. Close this editor, refresh and reopen the site.",
+        },
         409,
       );
     return c.json(rows[0]);
