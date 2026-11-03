@@ -30,7 +30,7 @@ public class MainActivity extends BridgeActivity {
   if (webViewVersion < 108) {
    getBridge().getWebView().stopLoading();
    LinearLayout update = new LinearLayout(this);update.setOrientation(LinearLayout.VERTICAL);update.setGravity(Gravity.CENTER);update.setPadding(40,40,40,40);update.setBackgroundColor(Color.rgb(246,247,249));
-   TextView notice = new TextView(this);notice.setText("Update Android System WebView and Chrome in the Play Store, then reopen Site Requisitions.");notice.setTextSize(20);notice.setTextColor(Color.rgb(23,35,29));update.addView(notice);
+   TextView notice = new TextView(this);notice.setText("Update Android System WebView and Chrome in the Play Store, then reopen Redpeach SiteOps.");notice.setTextSize(20);notice.setTextColor(Color.rgb(23,35,29));update.addView(notice);
    Button openStore = new Button(this);openStore.setText("Open Play Store");openStore.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://play.google.com/store/apps/details?id=com.google.android.webview")));}catch(Exception ignored){}});update.addView(openStore);
    addContentView(update,new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT,FrameLayout.LayoutParams.MATCH_PARENT));
    return;

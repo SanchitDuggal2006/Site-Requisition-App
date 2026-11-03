@@ -3,6 +3,13 @@ import { createRoot } from "react-dom/client";
 import { api, ApiError, setCsrf } from "./api";
 import { units, roles } from "../server/domain";
 import "./style.css";
+import {
+  SitePhoto,
+  UnitPicker,
+  BatchPanel,
+  SiteDashboard,
+  preparePhoto,
+} from "./siteops";
 type Row = Record<string, any>;
 const number = (v: unknown) =>
   Number(v).toLocaleString("en-IN", { maximumFractionDigits: 3 });
@@ -29,6 +36,7 @@ function ErrorBox({ message }: { message: string }) {
   ) : null;
 }
 function App() {
+  const [workspaceRole, setWorkspaceRole] = useState("DIRECTOR");
   const [session, setSession] = useState<Row | null>(null),
     [starting, setStarting] = useState(true),
     [route, setRoute] = useState(location.hash.slice(1) || "/"),
@@ -104,8 +112,8 @@ function App() {
     return (
       <main>
         <div className="brand">
-          <img src="/icon.svg" alt="" />
-          Site Requisitions
+          <img src="/redpeach-logo.png" alt="" />
+          Redpeach SiteOps
         </div>
         <Empty>Opening your workspace…</Empty>
       </main>
@@ -146,8 +154,8 @@ function App() {
     <>
       <header>
         <button className="brand" onClick={() => go("/")}>
-          <img src="/icon.svg" alt="" />
-          <span>Site Requisitions</span>
+          <img src="/redpeach-logo.png" alt="" />
+          <span>Redpeach SiteOps</span>
         </button>
         <details className="account">
           <summary aria-label="Account">
@@ -179,7 +187,26 @@ function App() {
         }}
       >
         <div className="refresh">
-          <span>{label(user.role)} workspace</span>
+          {director ? (
+            <label className="workspace-switch">
+              Workspace
+              <select
+                aria-label="Director workspace"
+                value={workspaceRole}
+                onChange={(e) => {
+                  setWorkspaceRole(e.target.value);
+                  go("/");
+                }}
+              >
+                <option value="DIRECTOR">Director · overview</option>
+                <option value="MANAGER">Manager · approvals</option>
+                <option value="SUPERVISOR">Site · requests & receipts</option>
+                <option value="PURCHASE">Purchase · orders</option>
+              </select>
+            </label>
+          ) : (
+            <span>{label(user.role)} workspace</span>
+          )}
           <button disabled={refreshing} onClick={refresh}>
             {refreshing ? "Refreshing…" : "↓ Refresh"}
           </button>
@@ -187,7 +214,10 @@ function App() {
         <ErrorBox message={error} />
         <Workspace
           key={user.id}
-          user={user}
+          user={{
+            ...user,
+            workspaceRole: director ? workspaceRole : user.role,
+          }}
           day={session!.today}
           timezone={session!.timezone}
           route={route}
@@ -231,9 +261,13 @@ function Login({
     [busy, setBusy] = useState(false);
   return (
     <main className="login">
-      <img className="logo" src="/icon.svg" alt="Construction mark" />
+      <img
+        className="logo"
+        src="/redpeach-logo.png"
+        alt="Redpeach Innovations"
+      />
       <p className="eyebrow">YOUR SITES. ONE SHARED RECORD.</p>
-      <h1>Site Requisitions</h1>
+      <h1>Redpeach SiteOps</h1>
       <p className="muted">From the first request to the last delivery.</p>
       <form
         onSubmit={async (e) => {
@@ -269,6 +303,11 @@ function Login({
             name="pin"
             type="password"
             inputMode="numeric"
+            onInput={(e) => {
+              e.currentTarget.value = e.currentTarget.value
+                .replace(/\D/g, "")
+                .slice(0, 6);
+            }}
             autoComplete="current-password"
             pattern="[0-9]{6}"
             minLength={6}
@@ -303,8 +342,8 @@ function PinForm({
     <>
       <h1>{mandatory ? "Set your own PIN" : "Change PIN"}</h1>
       <p>
-        Choose six digits. Avoid repeated or sequential numbers. You will sign
-        in again afterwards.
+        Choose any six numbers except obvious PINs such as 123456 or 111111. You
+        will sign in again afterwards.
       </p>
       <form
         onSubmit={async (e) => {
@@ -336,6 +375,11 @@ function PinForm({
               name={name}
               type="password"
               inputMode="numeric"
+              onInput={(e) => {
+                e.currentTarget.value = e.currentTarget.value
+                  .replace(/\D/g, "")
+                  .slice(0, 6);
+              }}
               pattern="[0-9]{6}"
               maxLength={6}
               required
@@ -443,10 +487,10 @@ function Workspace({
     return () => {
       epoch.current++;
     };
-  }, [route, revision, reportDate, reportSite]);
-  const director = user.role === "DIRECTOR",
-    supervisor = user.role === "SUPERVISOR",
-    manager = user.role === "MANAGER";
+  }, [route, revision, reportDate, reportSite, user.workspaceRole]);
+  const director = user.workspaceRole === "DIRECTOR",
+    supervisor = user.workspaceRole === "SUPERVISOR",
+    manager = user.workspaceRole === "MANAGER";
   if (route.startsWith("/new/")) {
     const site = sites.find((s) => s.id === route.split("/")[2]);
     return site ? (
@@ -477,7 +521,11 @@ function Workspace({
       ) : (
         <>
           {route.startsWith("/manage") ? (
-            <Manage sites={sites} users={users} refresh={refresh} />
+            user.role === "DIRECTOR" ? (
+              <Manage sites={sites} users={users} refresh={refresh} />
+            ) : (
+              <Empty>Director access required.</Empty>
+            )
           ) : route.startsWith("/report") ? (
             <>
               <h1>Daily report</h1>
@@ -533,7 +581,7 @@ function Workspace({
               </button>
               <h1>{sites.find((s) => s.id === route.split("/")[2])?.name}</h1>
               <h2>Daily requirement</h2>
-              {(director || supervisor) &&
+              {(user.role === "DIRECTOR" || supervisor || manager) &&
                 sites.find((s) => s.id === route.split("/")[2])?.active && (
                   <button
                     className="primary"
@@ -578,7 +626,9 @@ function Workspace({
             </>
           ) : manager ? (
             <>
-              <h1>Awaiting approval</h1>
+              <h1>Your sites & approvals</h1>
+              <SiteList sites={sites} go={go} />
+              <h2>Awaiting approval</h2>
               <p className="muted">
                 Review requirements for your assigned sites.
               </p>
@@ -620,7 +670,10 @@ function Workspace({
                     <span className="count">
                       {
                         items.filter((i) =>
-                          t === "To order" ? !i.ordered : i.ordered,
+                          t === "To order"
+                            ? Number(i.ordered_quantity) + Number(i.cancelled) <
+                              Number(i.quantity)
+                            : Number(i.ordered_quantity) > Number(i.received),
                         ).length
                       }
                     </span>
@@ -628,13 +681,19 @@ function Workspace({
                 ))}
               </div>
               {items.filter((i) =>
-                purchaseTab === "To order" ? !i.ordered : i.ordered,
+                purchaseTab === "To order"
+                  ? Number(i.ordered_quantity) + Number(i.cancelled) <
+                    Number(i.quantity)
+                  : Number(i.ordered_quantity) > Number(i.received),
               ).length === 0 ? (
                 <Empty>No items here. You’re up to date.</Empty>
               ) : (
                 items
                   .filter((i) =>
-                    purchaseTab === "To order" ? !i.ordered : i.ordered,
+                    purchaseTab === "To order"
+                      ? Number(i.ordered_quantity) + Number(i.cancelled) <
+                        Number(i.quantity)
+                      : Number(i.ordered_quantity) > Number(i.received),
                   )
                   .map((i) => (
                     <button
@@ -674,8 +733,9 @@ function SiteList({ sites, go }: any) {
         key={s.id}
         onClick={() => go("/site/" + s.id)}
       >
+        <SitePhoto site={s} />
         <strong>{s.name}</strong>
-        <span>{s.active ? "Active site" : "Inactive · history available"}</span>
+        <Chip status={s.status || "ACTIVE"} />
         {s.updated > 0 && <span className="badge">{s.updated} updated</span>}
       </button>
     ))
@@ -826,17 +886,10 @@ function NewRequest({ user, site, day, initial, onDone, onBack }: any) {
                   onChange={(e) => update(n, "quantity", e.target.value)}
                 />
               </label>
-              <label>
-                Unit
-                <select
-                  value={i.unit}
-                  onChange={(e) => update(n, "unit", e.target.value)}
-                >
-                  {units.map((u) => (
-                    <option key={u}>{u}</option>
-                  ))}
-                </select>
-              </label>
+              <UnitPicker
+                value={i.unit}
+                onChange={(v: string) => update(n, "unit", v)}
+              />
             </div>
             <label>
               Required by
@@ -951,7 +1004,8 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
             </>
           )}
           {(director ||
-            (user.role === "SUPERVISOR" && d.requested_by === user.id)) && (
+            (["SUPERVISOR", "MANAGER"].includes(user.role) &&
+              d.requested_by === user.id)) && (
             <button
               disabled={busy}
               onClick={() => {
@@ -965,7 +1019,7 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
         </div>
       )}
       {["REJECTED", "CANCELLED"].includes(d.status) &&
-        (director || user.role === "SUPERVISOR") && (
+        (director || ["SUPERVISOR", "MANAGER"].includes(user.role)) && (
           <button onClick={onCopy}>Copy as new requisition</button>
         )}
       {action?.type === "reject" && (
@@ -1009,6 +1063,33 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
             date(i.required_by) < day && <p className="overdue">Overdue</p>}
           {d.status === "APPROVED" && (
             <>
+              <div className="order-progress">
+                <div className="between">
+                  <span>
+                    Ordered {number(i.ordered_quantity)} /{" "}
+                    {number(Number(i.quantity) - Number(i.cancelled))} {i.unit}
+                  </span>
+                  <strong>
+                    {Math.round(
+                      (Number(i.ordered_quantity) /
+                        Math.max(
+                          0.001,
+                          Number(i.quantity) - Number(i.cancelled),
+                        )) *
+                        100,
+                    )}
+                    %
+                  </strong>
+                </div>
+                <progress
+                  aria-label="Ordered quantity"
+                  value={Number(i.ordered_quantity)}
+                  max={Math.max(
+                    0.001,
+                    Number(i.quantity) - Number(i.cancelled),
+                  )}
+                />
+              </div>
               <div className="quantities">
                 <span>
                   Sent <strong>{number(i.dispatched)}</strong>
@@ -1036,26 +1117,27 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
                   Number(i.quantity) >
                     Number(i.received) + Number(i.cancelled) && (
                     <>
-                      {!i.ordered && (
+                      {Number(i.ordered_quantity) + Number(i.cancelled) <
+                        Number(i.quantity) && (
                         <button
                           onClick={() =>
                             setAction({ type: "ORDERED", item: i })
                           }
                         >
-                          Mark ordered
+                          {Number(i.ordered_quantity) > 0
+                            ? "Order next batch"
+                            : "Mark ordered"}
                         </button>
                       )}
-                      {i.ordered &&
-                        Number(i.dispatched) + Number(i.cancelled) <
-                          Number(i.quantity) && (
-                          <button
-                            onClick={() =>
-                              setAction({ type: "DISPATCHED", item: i })
-                            }
-                          >
-                            Record dispatch
-                          </button>
-                        )}
+                      {Number(i.dispatched) < Number(i.ordered_quantity) && (
+                        <button
+                          onClick={() =>
+                            setAction({ type: "DISPATCHED", item: i })
+                          }
+                        >
+                          Record dispatch
+                        </button>
+                      )}
                       {Number(i.dispatched) + Number(i.cancelled) <
                         Number(i.quantity) && (
                         <button
@@ -1068,7 +1150,7 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
                       )}
                     </>
                   )}
-                {(director || user.role === "SUPERVISOR") &&
+                {(director || ["SUPERVISOR", "MANAGER"].includes(user.role)) &&
                   Number(i.received) < Number(i.dispatched) && (
                     <button
                       className="primary"
@@ -1078,8 +1160,19 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
                     </button>
                   )}
               </div>
+              <BatchPanel
+                batches={(d.batches || []).filter(
+                  (b: Row) => b.item_id === i.id,
+                )}
+                item={i}
+                canPurchase={director || user.role === "PURCHASE"}
+                onAction={(type: string, batch: Row) =>
+                  setAction({ type, item: i, batch })
+                }
+              />
               {action?.item?.id === i.id && (
                 <ItemAction
+                  key={action!.type + (action!.batch?.id || "")}
                   action={action}
                   onClose={() => setAction(null)}
                   onDone={() => {
@@ -1118,11 +1211,16 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
 function ItemAction({ action: a, onClose, onDone }: any) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  const i = a.item;
+  const i = a.item,
+    b = a.batch;
   const max =
-    a.type === "RECEIVED"
-      ? Number(i.dispatched) - Number(i.received)
-      : Number(i.quantity) - Number(i.dispatched) - Number(i.cancelled);
+    a.type === "ORDERED"
+      ? Number(i.quantity) - Number(i.cancelled) - Number(i.ordered_quantity)
+      : a.type === "DISPATCHED"
+        ? Number(i.ordered_quantity) - Number(i.dispatched)
+        : a.type === "RECEIVED"
+          ? Number(i.dispatched) - Number(i.received)
+          : Number(i.quantity) - Number(i.dispatched) - Number(i.cancelled);
   return (
     <form
       className="action-form"
@@ -1130,7 +1228,9 @@ function ItemAction({ action: a, onClose, onDone }: any) {
         e.preventDefault();
         if (
           a.type === "CANCELLED" &&
-          !confirm("Cancel this quantity permanently?")
+          !confirm(
+            "Cancel this quantity permanently? Unsent order quantities will also be reduced.",
+          )
         )
           return;
         const f = new FormData(e.currentTarget);
@@ -1140,12 +1240,22 @@ function ItemAction({ action: a, onClose, onDone }: any) {
           await api("/items/" + i.id + "/action", {
             action: a.type,
             version: i.version,
-            ...(a.type === "ORDERED"
-              ? { supplier: f.get("supplier") }
-              : {
-                  quantity: Number(f.get("quantity")),
-                  reason: String(f.get("reason") || ""),
-                }),
+            ...(a.type !== "STATUS"
+              ? { quantity: Number(f.get("quantity")) }
+              : {}),
+            reason: String(f.get("reason") || ""),
+            ...(["ORDERED", "STATUS"].includes(a.type)
+              ? {
+                  supplier: String(f.get("supplier") || ""),
+                  contact: String(f.get("contact") || ""),
+                  ...(f.get("expectedBy")
+                    ? { expectedBy: f.get("expectedBy") }
+                    : {}),
+                  ...(b
+                    ? { batchId: b.id, shippingStatus: f.get("shippingStatus") }
+                    : {}),
+                }
+              : {}),
           });
           onDone();
         } catch (e) {
@@ -1155,42 +1265,106 @@ function ItemAction({ action: a, onClose, onDone }: any) {
         }
       }}
     >
-      <h3>{a.type === "RECEIVED" ? "Confirm what arrived" : label(a.type)}</h3>
-      {a.type === "ORDERED" ? (
+      <h3>
+        {a.type === "ORDERED"
+          ? "Record an order batch"
+          : a.type === "STATUS"
+            ? "Update order & delivery"
+            : a.type === "RECEIVED"
+              ? "Confirm what arrived"
+              : label(a.type)}
+      </h3>
+      {a.type !== "STATUS" && (
         <label>
-          Supplier (optional)
-          <input name="supplier" maxLength={150} />
+          Quantity ({i.unit}) · maximum {number(max)}
+          <input
+            name="quantity"
+            type="number"
+            inputMode="decimal"
+            step="0.001"
+            min="0.001"
+            max={max}
+            defaultValue={max}
+            required
+          />
         </label>
-      ) : (
+      )}
+      {["ORDERED", "STATUS"].includes(a.type) && (
         <>
           <label>
-            Quantity ({i.unit}) · maximum {number(max)}
+            Supplier (optional)
             <input
-              name="quantity"
-              type="number"
-              step="0.001"
-              min="0.001"
-              max={max}
-              defaultValue={max}
-              required
+              name="supplier"
+              maxLength={150}
+              defaultValue={b?.supplier || ""}
             />
           </label>
           <label>
-            {a.type === "CANCELLED" ? "Reason" : "Note (optional)"}
-            <textarea
-              name="reason"
-              maxLength={300}
-              required={a.type === "CANCELLED"}
+            Supplier / delivery contact (optional)
+            <input
+              name="contact"
+              maxLength={100}
+              placeholder="Name and mobile number"
+              defaultValue={b?.contact || ""}
+            />
+          </label>
+          <label>
+            Expected delivery
+            <input
+              name="expectedBy"
+              type="date"
+              required={a.type === "ORDERED"}
+              defaultValue={
+                b?.expected_by?.slice(0, 10) ||
+                new Date().toLocaleDateString("en-CA", {
+                  timeZone: "Asia/Kolkata",
+                })
+              }
             />
           </label>
         </>
       )}
+      {a.type === "STATUS" && (
+        <label>
+          Delivery status
+          <select name="shippingStatus" defaultValue={b.shipping_status}>
+            {["NOT_SHIPPED", "IN_TRANSIT", "DELAYED"].map((v) => (
+              <option
+                key={v}
+                value={v}
+                disabled={
+                  (v === "NOT_SHIPPED" && Number(b.dispatched) > 0) ||
+                  (v === "IN_TRANSIT" &&
+                    Number(b.dispatched) <= Number(b.received))
+                }
+              >
+                {label(v)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label>
+        {a.type === "CANCELLED" ? "Reason" : "Note (optional)"}
+        <textarea
+          name="reason"
+          maxLength={300}
+          required={a.type === "CANCELLED"}
+          defaultValue={b?.note || ""}
+        />
+      </label>
+      {a.type === "DISPATCHED" || a.type === "RECEIVED" ? (
+        <p className="hint">
+          Allocated to the oldest open batches first. Confirm only the quantity
+          actually sent or received.
+        </p>
+      ) : null}
       <ErrorBox message={error} />
       <div className="actions">
         <button className="primary" disabled={busy}>
           Confirm
         </button>
-        <button type="button" onClick={onClose}>
+        <button type="button" disabled={busy} onClick={onClose}>
           Back
         </button>
       </div>
@@ -1232,7 +1406,7 @@ function Manage({ sites, users, refresh }: any) {
                   active: true,
                   site_ids: [],
                 }
-              : { name: "", active: true },
+              : { name: "", active: true, status: "ACTIVE", version: 0 },
           )
         }
       >
@@ -1347,6 +1521,11 @@ function Manage({ sites, users, refresh }: any) {
                   pattern="[0-9]{6}"
                   maxLength={6}
                   inputMode="numeric"
+                  onInput={(e) => {
+                    e.currentTarget.value = e.currentTarget.value
+                      .replace(/\D/g, "")
+                      .slice(0, 6);
+                  }}
                   required={!editing.id}
                 />
               </label>
@@ -1356,24 +1535,105 @@ function Manage({ sites, users, refresh }: any) {
               </p>
             </>
           )}
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={editing.active}
-              onChange={(e) => {
-                if (
-                  e.target.checked ||
-                  confirm(
-                    "Deactivate this " +
-                      (tab === "Users" ? "user" : "site") +
-                      "?",
-                  )
-                )
-                  setEditing({ ...editing, active: e.target.checked });
-              }}
-            />
-            Active
-          </label>
+          {tab === "Sites" && (
+            <>
+              <label>
+                Site status
+                <select
+                  value={editing.status || "ACTIVE"}
+                  onChange={(e) =>
+                    setEditing({ ...editing, status: e.target.value })
+                  }
+                >
+                  {["ACTIVE", "PIPELINE", "TO_START", "COMPLETED"].map((v) => (
+                    <option key={v} value={v}>
+                      {label(v)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="hint">
+                Completed sites retain their history and stop accepting new
+                requests. Existing orders can still be closed.
+              </p>
+              <label>
+                Site photo (optional)
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setBusy(true);
+                    setError("");
+                    try {
+                      const photo = await preparePhoto(file);
+                      setEditing((current) =>
+                        current ? { ...current, photo } : current,
+                      );
+                    } catch (err) {
+                      setError((err as Error).message);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                />
+              </label>
+              {editing.photo ? (
+                <img
+                  className="photo-preview"
+                  src={editing.photo}
+                  alt="Site preview"
+                />
+              ) : editing.has_photo && editing.photo !== null ? (
+                <SitePhoto site={editing} />
+              ) : null}
+              {(editing.photo || editing.has_photo) && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditing({ ...editing, photo: null, has_photo: false })
+                  }
+                >
+                  Remove photo
+                </button>
+              )}
+            </>
+          )}
+          {tab === "Users" && (
+            <p className="hint">
+              {editing.role === "DIRECTOR"
+                ? "Full control across all sites, users and orders."
+                : editing.role === "MANAGER"
+                  ? "Assigned sites: raise and approve requests (including own), track deliveries and confirm receipt. Cannot order."
+                  : editing.role === "SUPERVISOR"
+                    ? "Assigned sites: raise requests and confirm receipts. Cannot approve or order."
+                    : "Approved requests only: order batches, record dispatch and update delivery details. Cannot approve."}{" "}
+              Remove access by switching Active off; history is retained.
+            </p>
+          )}
+          {tab === "Users" && (
+            <>
+              <label className="checkbox">
+                <input
+                  type="checkbox"
+                  checked={editing.active}
+                  onChange={(e) => {
+                    if (
+                      e.target.checked ||
+                      confirm(
+                        "Deactivate this " +
+                          (tab === "Users" ? "user" : "site") +
+                          "?",
+                      )
+                    )
+                      setEditing({ ...editing, active: e.target.checked });
+                  }}
+                />
+                Active
+              </label>
+            </>
+          )}
           <div className="actions">
             <button className="primary" disabled={busy}>
               Save
@@ -1394,9 +1654,7 @@ function Manage({ sites, users, refresh }: any) {
           <span>
             {tab === "Users"
               ? label(r.role) + " · " + r.phone
-              : r.active
-                ? "Active site"
-                : "Inactive site"}
+              : label(r.status || "ACTIVE")}
           </span>
           {!r.active && <small>Inactive</small>}
         </button>
@@ -1431,49 +1689,66 @@ function Report({ report: r }: any) {
       </div>
       <ErrorBox message={error} />
       <dl className="summary">
-        {Object.entries(r.summary).map(([key, value]) => (
-          <div key={key}>
-            <dt>{label(key)}</dt>
-            <dd>{String(value)}</dd>
-          </div>
-        ))}
+        {Object.entries(r.summary)
+          .filter(([key]) =>
+            ["raised", "approved", "ordered", "overdue"].includes(key),
+          )
+          .map(([key, value]) => (
+            <div key={key}>
+              <dt>{label(key)}</dt>
+              <dd>{String(value)}</dd>
+            </div>
+          ))}
       </dl>
       <p className="hint">
-        Raised / approved / rejected count requisitions. Ordered / delivered
-        count items; dispatches / receipts count recorded events. Overdue is the
-        number of outstanding items as of now.
+        Raised / approved / rejected count requisitions. Ordered counts order
+        batches; delivered counts material completions; dispatches / receipts
+        count recorded events. Overdue is the number of outstanding items as of
+        now.
       </p>
-      <h2>Raised on {r.date}</h2>
-      <ReportItems rows={r.raised} />
-      <h2>Activity on {r.date}</h2>
-      {r.activity.length ? (
-        r.activity.map((e: Row) => (
-          <div className="card" key={e.id}>
-            <strong>
-              {e.site_name} · {mr(e.number)}
-            </strong>
-            <p>
-              {label(e.action)}
-              {e.description ? " · " + e.description : ""}
-              {e.quantity ? " · " + number(e.quantity) : ""}
-            </p>
-            <small>
-              {e.actor_name} ·{" "}
-              {new Date(e.created_at).toLocaleTimeString("en-IN", {
-                timeZone: r.timezone,
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </small>
-            {e.reason && <p>{e.reason}</p>}
-          </div>
-        ))
-      ) : (
-        <Empty>No activity on this date.</Empty>
-      )}
-      <h2>Open and overdue</h2>
-      <p className="muted">As of now · {r.today}</p>
-      <ReportItems rows={r.open} day={r.today} />
+      <SiteDashboard sites={r.siteOverview || []} />
+      <details className="report-section">
+        <summary>
+          Requisitions raised · {r.date} · {r.raised.length} material lines
+        </summary>
+        <h2>Raised on {r.date}</h2>
+        <ReportItems rows={r.raised} />
+      </details>
+      <details className="report-section">
+        <summary>Activity log · {r.activity.length} updates</summary>
+        <h2>Activity on {r.date}</h2>
+        {r.activity.length ? (
+          r.activity.map((e: Row) => (
+            <div className="card" key={e.id}>
+              <strong>
+                {e.site_name} · {mr(e.number)}
+              </strong>
+              <p>
+                {label(e.action)}
+                {e.description ? " · " + e.description : ""}
+                {e.quantity ? " · " + number(e.quantity) : ""}
+              </p>
+              <small>
+                {e.actor_name} ·{" "}
+                {new Date(e.created_at).toLocaleTimeString("en-IN", {
+                  timeZone: r.timezone,
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </small>
+              {e.reason && <p>{e.reason}</p>}
+            </div>
+          ))
+        ) : (
+          <Empty>No activity on this date.</Empty>
+        )}
+      </details>
+      <details className="report-section" open>
+        <summary>Outstanding materials · {r.open.length}</summary>
+        <h2>Open and overdue</h2>
+        <p className="muted">As of now · {r.today}</p>
+        <ReportItems rows={r.open} day={r.today} />
+      </details>
     </>
   );
 }
@@ -1500,8 +1775,8 @@ function ReportItems({ rows, day }: any) {
           <span className="overdue">Overdue</span>
         )}
         <p className="hint">
-          Sent {number(i.dispatched)} · Received {number(i.received)} ·
-          Cancelled {number(i.cancelled)}
+          Ordered {number(i.ordered_quantity)} · Sent {number(i.dispatched)} ·
+          Received {number(i.received)} · Cancelled {number(i.cancelled)}
         </p>
       </div>
     ))

@@ -1,4 +1,4 @@
-import { mkdir, writeFile, readFile, access } from "node:fs/promises";
+import { mkdir, writeFile, readFile, access, copyFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 const root = new URL("../", import.meta.url);
 const dir = new URL("../android-app/", import.meta.url);
@@ -33,7 +33,7 @@ await writeFile(
   JSON.stringify(
     {
       appId,
-      appName: "Site Requisitions",
+      appName: "Redpeach SiteOps",
       webDir: "www",
       server: { url: appUrl, cleartext: false },
       android: { allowMixedContent: false, webContentsDebuggingEnabled: false },
@@ -125,7 +125,7 @@ await writeFile(
   `<?xml version="1.0" encoding="utf-8"?>
 <resources>
  <style name="AppTheme" parent="Theme.AppCompat.Light.NoActionBar">
-  <item name="colorPrimary">#21583d</item><item name="colorPrimaryDark">#f6f7f9</item><item name="colorAccent">#21583d</item>
+  <item name="colorPrimary">#be1220</item><item name="colorPrimaryDark">#f6f7f9</item><item name="colorAccent">#be1220</item>
   <item name="android:windowLightStatusBar">true</item><item name="android:statusBarColor">#f6f7f9</item>
  </style>
  <style name="AppTheme.NoActionBar" parent="AppTheme"><item name="windowActionBar">false</item><item name="windowNoTitle">true</item></style>
@@ -133,4 +133,22 @@ await writeFile(
   <item name="windowSplashScreenBackground">#f6f7f9</item><item name="windowSplashScreenAnimatedIcon">@drawable/ic_site</item><item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
  </style>
 </resources>`,
+);
+
+await copyFile(
+  new URL("public/redpeach-logo.png", root),
+  new URL("drawable/redpeach_logo.png", res),
+);
+let finalManifest = await readFile(
+  new URL("android/app/src/main/AndroidManifest.xml", dir),
+  "utf8",
+);
+await writeFile(
+  new URL("android/app/src/main/AndroidManifest.xml", dir),
+  finalManifest.replaceAll("@drawable/ic_site", "@drawable/redpeach_logo"),
+);
+let finalStyles = await readFile(new URL("values/styles.xml", res), "utf8");
+await writeFile(
+  new URL("values/styles.xml", res),
+  finalStyles.replaceAll("@drawable/ic_site", "@drawable/redpeach_logo"),
 );

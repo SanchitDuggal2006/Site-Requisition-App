@@ -7,7 +7,14 @@ const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 mkdirSync("android-evidence", { recursive: true });
 const apk = readdirSync("apk").find((n) => n.endsWith(".apk"));
 if (!apk) throw new Error("Signed APK missing");
+const previous = readdirSync("apk-previous").find((n) => n.endsWith(".apk"));
+if (!previous) throw new Error("Previous signed APK missing for upgrade check");
+adb("install", "-r", "apk-previous/" + previous);
 adb("install", "-r", "apk/" + apk);
+writeFileSync(
+  "android-evidence/upgrade.txt",
+  "PASS: previous signed APK installed, then updated in place to the new release with adb install -r.\n",
+);
 const launch = () => adb("shell", "am", "start", "-n", id + "/.MainActivity");
 const capture = (name) => {
   writeFileSync(

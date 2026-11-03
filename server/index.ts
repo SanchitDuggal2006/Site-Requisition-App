@@ -30,7 +30,7 @@ export function createApp(override?: Query) {
   app.use(
     "/api/*",
     bodyLimit({
-      maxSize: 100000,
+      maxSize: 250000,
       onError: (c) => c.json({ error: "Request too large" }, 413),
     }),
   );
@@ -50,7 +50,7 @@ export function createApp(override?: Query) {
       if (!c.req.header("Content-Type")?.startsWith("application/json"))
         return c.json({ error: "JSON required" }, 415);
       const size = Number(c.req.header("Content-Length") || 0);
-      if (size > 100000) return c.json({ error: "Request too large" }, 413);
+      if (size > 250000) return c.json({ error: "Request too large" }, 413);
     }
     if (c.req.path === "/api/login" || c.req.path === "/api/health") {
       await next();
@@ -105,6 +105,10 @@ export function createApp(override?: Query) {
       );
     const message = err.message;
     const errors: Record<string, [string, number]> = {
+      INVALID_SHIPPING_STATUS: [
+        "Record dispatch before choosing In transit. Dispatched batches cannot be marked Not shipped.",
+        400,
+      ],
       FORBIDDEN: ["You do not have permission for this action", 403],
       CONFLICT: [
         "This was just updated by someone else. Refresh and try again.",
@@ -226,7 +230,7 @@ export function createApp(override?: Query) {
   app.get("/api/sites", async (c) =>
     c.json(
       await c.get("db")(
-        `SELECT s.*,(SELECT count(*) FROM requisitions r WHERE r.site_id=s.id AND r.status='SUBMITTED')::int AS pending,(SELECT count(*) FROM requisitions r WHERE r.site_id=s.id AND EXISTS(SELECT 1 FROM events e WHERE e.requisition_id=r.id AND e.created_at>COALESCE((SELECT seen_at FROM seen WHERE user_id=$1 AND site_id=s.id),'1970-01-01')))::int AS updated FROM sites s WHERE site_access($1,s.id) ORDER BY s.active DESC,s.name`,
+        `SELECT s.id,s.name,s.active,s.status,s.version,(s.photo IS NOT NULL) AS has_photo,(SELECT count(*) FROM requisitions r WHERE r.site_id=s.id AND r.status='SUBMITTED' AND request_access($1,r.id))::int AS pending,(SELECT count(*) FROM requisitions r WHERE r.site_id=s.id AND request_access($1,r.id) AND EXISTS(SELECT 1 FROM events e WHERE e.requisition_id=r.id AND e.created_at>COALESCE((SELECT seen_at FROM seen WHERE user_id=$1 AND site_id=s.id),'1970-01-01')))::int AS updated FROM sites s WHERE site_access($1,s.id) ORDER BY s.active DESC,s.name`,
         [c.get("user").id],
       ),
     ),
@@ -238,15 +242,66 @@ export function createApp(override?: Query) {
       .object({
         id: z.uuid().optional(),
         name: z.string().trim().min(1).max(100),
-        active: z.boolean().default(true),
+        status: z
+          .enum(["ACTIVE", "PIPELINE", "TO_START", "COMPLETED"])
+          .default("ACTIVE"),
+        version: z.number().int().nonnegative().default(0),
+        photo: z
+          .string()
+          .max(160000)
+          .regex(/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/=]+$/)
+          .nullable()
+          .optional(),
       })
       .parse(await c.req.json());
     const rows = await c.get("db")(
-      "INSERT INTO sites(id,name,active) VALUES(COALESCE($1::uuid,gen_random_uuid()),$2,$3) ON CONFLICT(id) DO UPDATE SET name=excluded.name,active=excluded.active RETURNING *",
-      [p.id ?? null, p.name, p.active],
+      `WITH changed AS (
+      INSERT INTO sites(id,name,active,status,photo) VALUES(COALESCE($1::uuid,gen_random_uuid()),$2,$3<>'COMPLETED',$3,$4)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name,active=excluded.active,status=excluded.status,photo=CASE WHEN $5 THEN excluded.photo ELSE sites.photo END,version=sites.version+1 WHERE sites.version=$6 RETURNING id,name,status,version
+    ), logged AS (INSERT INTO events(actor_id,action,reason) SELECT $7,'SITE_UPDATED',name || ': ' || status FROM changed)
+    SELECT * FROM changed`,
+      [
+        p.id ?? null,
+        p.name,
+        p.status,
+        p.photo ?? null,
+        p.photo !== undefined,
+        p.version,
+        c.get("user").id,
+      ],
     );
+    if (!rows.length)
+      return c.json(
+        { error: "This site changed. Refresh and try again." },
+        409,
+      );
     return c.json(rows[0]);
   });
+  app.get("/api/sites/:id/photo", async (c) => {
+    const id = z.uuid().parse(c.req.param("id"));
+    const [row] = await c.get("db")(
+      "SELECT photo FROM sites WHERE id=$1 AND site_access($2,id)",
+      [id, c.get("user").id],
+    );
+    if (!row?.photo) return c.notFound();
+    const bytes = Uint8Array.from(atob(row.photo.split(",")[1]), (x) =>
+      x.charCodeAt(0),
+    );
+    return c.body(bytes, 200, {
+      "Content-Type": "image/jpeg",
+      "Cache-Control": "private, no-store",
+    });
+  });
+  app.get("/api/units", async (c) =>
+    c.json(
+      (
+        await c.get("db")(
+          "SELECT DISTINCT unit FROM items WHERE request_access($1,requisition_id) ORDER BY unit",
+          [c.get("user").id],
+        )
+      ).map((x) => x.unit),
+    ),
+  );
   app.post("/api/sites/:id/seen", async (c) => {
     const id = z.uuid().parse(c.req.param("id"));
     await c.get("db")(
@@ -289,7 +344,7 @@ export function createApp(override?: Query) {
     if (site) z.uuid().parse(site);
     return c.json(
       await c.get("db")(
-        `SELECT r.*,s.name AS site_name,u.name AS requested_name,(SELECT count(*)::int FROM items WHERE requisition_id=r.id) AS item_count,(SELECT bool_and(received+cancelled=quantity) FROM items WHERE requisition_id=r.id) AS completed FROM requisitions r JOIN sites s ON s.id=r.site_id JOIN users u ON u.id=r.requested_by WHERE site_access($1,r.site_id) AND ($2::uuid IS NULL OR r.site_id=$2) ORDER BY r.created_at DESC`,
+        `SELECT r.*,s.name AS site_name,u.name AS requested_name,(SELECT count(*)::int FROM items WHERE requisition_id=r.id) AS item_count,(SELECT bool_and(received+cancelled=quantity) FROM items WHERE requisition_id=r.id) AS completed FROM requisitions r JOIN sites s ON s.id=r.site_id JOIN users u ON u.id=r.requested_by WHERE request_access($1,r.id) AND ($2::uuid IS NULL OR r.site_id=$2) ORDER BY r.created_at DESC`,
         [c.get("user").id, site ?? null],
       ),
     );
@@ -311,11 +366,11 @@ export function createApp(override?: Query) {
       sql = c.get("db"),
       uid = c.get("user").id;
     const [r] = await sql(
-      `SELECT r.*,s.name AS site_name,u.name AS requested_name FROM requisitions r JOIN sites s ON s.id=r.site_id JOIN users u ON u.id=r.requested_by WHERE r.id=$1 AND site_access($2,r.site_id)`,
+      `SELECT r.*,s.name AS site_name,u.name AS requested_name FROM requisitions r JOIN sites s ON s.id=r.site_id JOIN users u ON u.id=r.requested_by WHERE r.id=$1 AND request_access($2,r.id)`,
       [id, uid],
     );
     if (!r) return c.json({ error: "Requisition not found" }, 404);
-    const [items, events] = await Promise.all([
+    const [items, events, batches] = await Promise.all([
       sql("SELECT * FROM item_details WHERE requisition_id=$1 ORDER BY id", [
         id,
       ]),
@@ -323,8 +378,12 @@ export function createApp(override?: Query) {
         "SELECT e.*,u.name AS actor_name FROM events e JOIN users u ON u.id=e.actor_id WHERE requisition_id=$1 ORDER BY e.id",
         [id],
       ),
+      sql(
+        "SELECT b.* FROM order_batches b JOIN items i ON i.id=b.item_id WHERE i.requisition_id=$1 ORDER BY b.created_at,b.id",
+        [id],
+      ),
     ]);
-    return c.json({ ...r, items, events });
+    return c.json({ ...r, items, events, batches });
   });
   app.post("/api/requisitions/:id/status", async (c) => {
     const p = z
@@ -352,21 +411,32 @@ export function createApp(override?: Query) {
   app.post("/api/items/:id/action", async (c) => {
     const p = z
       .object({
-        action: z.enum(["ORDERED", "DISPATCHED", "RECEIVED", "CANCELLED"]),
+        action: z.enum([
+          "ORDERED",
+          "DISPATCHED",
+          "RECEIVED",
+          "CANCELLED",
+          "STATUS",
+        ]),
         version: z.number().int().nonnegative(),
         quantity: qty.optional(),
         reason: z.string().trim().max(300).default(""),
         supplier: z.string().trim().max(150).default(""),
+        contact: z.string().trim().max(100).default(""),
+        expectedBy: dateSchema.optional(),
+        batchId: z.uuid().optional(),
+        shippingStatus: z
+          .enum(["NOT_SHIPPED", "IN_TRANSIT", "DELAYED"])
+          .optional(),
       })
       .parse(await c.req.json());
-    await c.get("db")("SELECT transition_item($1,$2,$3,$4,$5,$6,$7)", [
+    if (p.action === "STATUS" && (!p.batchId || !p.shippingStatus))
+      return c.json({ error: "Choose a batch and shipping status" }, 400);
+    await c.get("db")("SELECT act_item($1,$2,$3,$4::jsonb)", [
       c.get("user").id,
       z.uuid().parse(c.req.param("id")),
       p.version,
-      p.action,
-      p.quantity ?? null,
-      p.reason,
-      p.supplier,
+      JSON.stringify(p),
     ]);
     return c.json({ ok: true });
   });
@@ -380,18 +450,35 @@ export function createApp(override?: Query) {
       uid = c.get("user").id,
       tz = c.env.BUSINESS_TZ || "Asia/Kolkata";
     const filter =
-      "site_access($1,site_id) AND ($2::uuid IS NULL OR site_id=$2)";
-    const [raised, activity, open] = await Promise.all([
+      "request_access($1,requisition_id) AND ($2::uuid IS NULL OR site_id=$2)";
+    const [raised, activity, open, siteOverview, orders] = await Promise.all([
       sql(
         `SELECT * FROM item_details WHERE ${filter} AND request_date=$3::date ORDER BY site_name,number,id`,
         [uid, site ?? null, day],
       ),
       sql(
-        `SELECT e.*,u.name AS actor_name,r.number,r.site_id,s.name AS site_name,i.description FROM events e JOIN users u ON u.id=e.actor_id JOIN requisitions r ON r.id=e.requisition_id JOIN sites s ON s.id=r.site_id LEFT JOIN items i ON i.id=e.item_id WHERE site_access($1,r.site_id) AND ($2::uuid IS NULL OR r.site_id=$2) AND e.created_at>=($3::date::timestamp AT TIME ZONE $4) AND e.created_at<(($3::date+1)::timestamp AT TIME ZONE $4) ORDER BY e.created_at DESC`,
+        `SELECT e.*,u.name AS actor_name,r.number,r.site_id,s.name AS site_name,i.description FROM events e JOIN users u ON u.id=e.actor_id JOIN requisitions r ON r.id=e.requisition_id JOIN sites s ON s.id=r.site_id LEFT JOIN items i ON i.id=e.item_id WHERE request_access($1,r.id) AND ($2::uuid IS NULL OR r.site_id=$2) AND e.created_at>=($3::date::timestamp AT TIME ZONE $4) AND e.created_at<(($3::date+1)::timestamp AT TIME ZONE $4) ORDER BY e.created_at DESC`,
         [uid, site ?? null, day, tz],
       ),
       sql(
         `SELECT * FROM item_details WHERE ${filter} AND requisition_status IN ('SUBMITTED','APPROVED') AND received+cancelled<quantity ORDER BY required_by,site_name,number`,
+        [uid, site ?? null],
+      ),
+      sql(
+        `SELECT s.id,s.name,s.status,s.version,(s.photo IS NOT NULL) AS has_photo,
+        count(i.id)::int AS materials,
+        count(i.id) FILTER (WHERE i.requisition_status='SUBMITTED')::int AS pending,
+        count(i.id) FILTER (WHERE i.item_status='DELIVERED' AND i.requisition_status='APPROVED')::int AS delivered,
+        count(i.id) FILTER (WHERE i.requisition_status IN ('SUBMITTED','APPROVED') AND i.received+i.cancelled<i.quantity)::int AS open,
+        count(i.id) FILTER (WHERE i.requisition_status='APPROVED' AND i.ordered_quantity+i.cancelled<i.quantity)::int AS to_order,
+        count(i.id) FILTER (WHERE i.dispatched>i.received)::int AS in_transit,
+        count(i.id) FILTER (WHERE i.required_by<(now() AT TIME ZONE $3)::date AND i.requisition_status IN ('SUBMITTED','APPROVED') AND i.received+i.cancelled<i.quantity)::int AS overdue
+        FROM sites s LEFT JOIN item_details i ON i.site_id=s.id AND request_access($1,i.requisition_id)
+        WHERE site_access($1,s.id) AND ($2::uuid IS NULL OR s.id=$2) GROUP BY s.id ORDER BY s.name`,
+        [uid, site ?? null, tz],
+      ),
+      sql(
+        `SELECT b.*,i.description,i.unit,i.number,i.site_name FROM order_batches b JOIN item_details i ON i.id=b.item_id WHERE request_access($1,i.requisition_id) AND ($2::uuid IS NULL OR i.site_id=$2) ORDER BY b.created_at DESC`,
         [uid, site ?? null],
       ),
     ]);
@@ -402,6 +489,8 @@ export function createApp(override?: Query) {
       today: now,
       timezone: tz,
       generatedAt: new Date().toISOString(),
+      siteOverview,
+      orders,
       raised,
       activity,
       open,

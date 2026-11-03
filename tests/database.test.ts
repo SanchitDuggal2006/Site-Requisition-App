@@ -44,6 +44,17 @@ beforeAll(async () => {
     await pool!.query("DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
     await pool!.query(migration);
   }
+  for (const file of ["002_director_lock.sql", "003_siteops.sql"]) {
+    let next = await readFile(
+      new URL("../db/" + file, import.meta.url),
+      "utf8",
+    );
+    if (embedded)
+      await embedded.exec(
+        next.replaceAll("PERFORM pg_advisory_xact_lock(774201);", ""),
+      );
+    else await pool!.query(next);
+  }
   pinHash = (await query("SELECT crypt('681429',gen_salt('bf',4)) AS hash"))[0]
     .hash;
   for (const [index, role] of [
@@ -468,10 +479,204 @@ describe("database invariants and API", () => {
         "SELECT transition_item($1,$2,2,'RECEIVED',5,'','')",
         [ids[role], iid],
       );
-      if (["director", "supervisor"].includes(role)) await receipt;
+      if (["director", "supervisor", "manager"].includes(role)) await receipt;
       else await expect(receipt).rejects.toThrow("FORBIDDEN");
     }
   }, 30000);
+  it("lets managers submit and approve their own assigned-site request, but not order", async () => {
+    const [r] = await query(
+      "SELECT create_requisition($1,$2::jsonb,'Asia/Kolkata') AS id",
+      [
+        ids.manager,
+        JSON.stringify({
+          key: crypto.randomUUID(),
+          siteId: ids.site,
+          items: [
+            {
+              description: "Manager material",
+              quantity: 10,
+              unit: "custom unit",
+              requiredBy: "2099-01-01",
+            },
+          ],
+        }),
+      ],
+    );
+    await query("SELECT transition_requisition($1,$2,'APPROVED','')", [
+      ids.manager,
+      r.id,
+    ]);
+    const [i] = await query("SELECT id FROM items WHERE requisition_id=$1", [
+      r.id,
+    ]);
+    await expect(
+      query("SELECT act_item($1,$2,0,$3::jsonb)", [
+        ids.manager,
+        i.id,
+        JSON.stringify({ action: "ORDERED", quantity: 7 }),
+      ]),
+    ).rejects.toThrow("FORBIDDEN");
+  });
+  it("hides pending and rejected requests from purchase across direct, list and report APIs", async () => {
+    const rid = await create();
+    const token = "purchase-visibility";
+    await query(
+      "INSERT INTO sessions VALUES($1,$2,'csrf',now()+interval '1 day')",
+      [await digest(token), ids.purchase],
+    );
+    const app = createApp(query),
+      get = (path: string) =>
+        app.request(
+          "https://app.test/api" + path,
+          { headers: { Cookie: "sr_session=" + token } },
+          { DATABASE_URL: "", BUSINESS_TZ: "Asia/Kolkata" },
+        );
+    for (const status of ["SUBMITTED", "REJECTED"]) {
+      expect((await get("/requisitions/" + rid)).status).toBe(404);
+      expect(
+        (await (await get("/requisitions")).json()).some(
+          (r: any) => r.id === rid,
+        ),
+      ).toBe(false);
+      const report = await (await get("/report?date=2099-01-01")).json();
+      expect(
+        [...report.raised, ...report.open, ...report.activity].some(
+          (r: any) => r.requisition_id === rid,
+        ),
+      ).toBe(false);
+      if (status === "SUBMITTED")
+        await query(
+          "SELECT transition_requisition($1,$2,'REJECTED','Not needed')",
+          [ids.manager, rid],
+        );
+    }
+  });
+  it("tracks 70 percent ordering, separate batches, bounded dispatch and status without changing quantities", async () => {
+    const rid = await create();
+    await query("SELECT transition_requisition($1,$2,'APPROVED','')", [
+      ids.manager,
+      rid,
+    ]);
+    const [i] = await query("SELECT * FROM items WHERE requisition_id=$1", [
+      rid,
+    ]);
+    const act = (version: number, p: any, actor = ids.purchase) =>
+      query("SELECT act_item($1,$2,$3,$4::jsonb)", [
+        actor,
+        i.id,
+        version,
+        JSON.stringify(p),
+      ]);
+    const total = Number(i.quantity),
+      first = total * 0.7;
+    await act(0, {
+      action: "ORDERED",
+      quantity: first,
+      supplier: "Batch one",
+      contact: "Test contact",
+      expectedBy: "2099-01-01",
+    });
+    expect(
+      Number(
+        (
+          await query("SELECT ordered_quantity FROM items WHERE id=$1", [i.id])
+        )[0].ordered_quantity,
+      ),
+    ).toBe(first);
+    await expect(
+      act(1, { action: "DISPATCHED", quantity: total }),
+    ).rejects.toThrow("INVALID_QUANTITY");
+    await expect(
+      act(1, { action: "ORDERED", quantity: total }),
+    ).rejects.toThrow("INVALID_QUANTITY");
+    await act(1, {
+      action: "ORDERED",
+      quantity: total - first,
+      supplier: "Batch two",
+    });
+    let batches = await query(
+      "SELECT * FROM order_batches WHERE item_id=$1 ORDER BY created_at,id",
+      [i.id],
+    );
+    expect(batches).toHaveLength(2);
+    await act(2, {
+      action: "STATUS",
+      batchId: batches[0].id,
+      shippingStatus: "DELAYED",
+      expectedBy: "2099-02-01",
+      reason: "Supplier delay",
+    });
+    expect(
+      Number(
+        (
+          await query("SELECT ordered_quantity FROM items WHERE id=$1", [i.id])
+        )[0].ordered_quantity,
+      ),
+    ).toBe(total);
+    await act(3, { action: "DISPATCHED", quantity: first });
+    await act(4, { action: "RECEIVED", quantity: first }, ids.supervisor);
+    batches = await query(
+      "SELECT * FROM order_batches WHERE item_id=$1 ORDER BY created_at,id",
+      [i.id],
+    );
+    expect(Number(batches[0].received)).toBe(first);
+    expect(Number(batches[1].received)).toBe(0);
+    await expect(act(4, { action: "DISPATCHED", quantity: 1 })).rejects.toThrow(
+      "CONFLICT",
+    );
+    await act(5, {
+      action: "CANCELLED",
+      quantity: total - first,
+      reason: "Scope reduced",
+    });
+    const [closed] = await query("SELECT * FROM item_details WHERE id=$1", [
+      i.id,
+    ]);
+    expect(closed.item_status).toBe("DELIVERED");
+    expect(Number(closed.ordered_quantity)).toBe(first);
+  });
+  it("rejects a batch from another material atomically", async () => {
+    const rid = await create();
+    await query("SELECT transition_requisition($1,$2,'APPROVED','')", [
+      ids.director,
+      rid,
+    ]);
+    const [i] = await query("SELECT id FROM items WHERE requisition_id=$1", [
+      rid,
+    ]);
+    await expect(
+      query("SELECT act_item($1,$2,0,$3::jsonb)", [
+        ids.purchase,
+        i.id,
+        JSON.stringify({
+          action: "STATUS",
+          batchId: crypto.randomUUID(),
+          shippingStatus: "DELAYED",
+        }),
+      ]),
+    ).rejects.toThrow("FORBIDDEN");
+    expect(
+      (await query("SELECT version FROM items WHERE id=$1", [i.id]))[0].version,
+    ).toBe(0);
+  });
+  it("keeps completed site history and refuses new requisitions there", async () => {
+    await query(
+      "UPDATE sites SET status='COMPLETED',active=false WHERE id=$1",
+      [ids.site],
+    );
+    await expect(create()).rejects.toThrow("FORBIDDEN");
+    expect(
+      (
+        await query(
+          "SELECT count(*)::int AS count FROM requisitions WHERE site_id=$1",
+          [ids.site],
+        )
+      )[0].count,
+    ).toBeGreaterThan(0);
+    await query("UPDATE sites SET status='ACTIVE',active=true WHERE id=$1", [
+      ids.site,
+    ]);
+  });
   it("supports director handover and invalidates reset-PIN sessions", async () => {
     const second = crypto.randomUUID();
     await query(

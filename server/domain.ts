@@ -15,6 +15,37 @@ export const units = [
   "roll",
   "bundle",
   "set",
+  "pair",
+  "piece",
+  "dozen",
+  "gram",
+  "quintal",
+  "tonne",
+  "mm",
+  "cm",
+  "foot",
+  "inch",
+  "yard",
+  "sqm",
+  "sqyd",
+  "cft",
+  "cum",
+  "brass",
+  "ml",
+  "drum",
+  "can",
+  "bucket",
+  "carton",
+  "length",
+  "coil",
+  "truck",
+  "trolley",
+  "trip",
+  "load",
+  "running metre",
+  "manday",
+  "job",
+  "lot",
 ] as const;
 export const transitions: Record<string, string[]> = {
   SUBMITTED: ["APPROVED", "REJECTED", "CANCELLED"],
@@ -65,7 +96,7 @@ export const pinSchema = z
         "345678",
         "567890",
       ].includes(v),
-    "Choose a less predictable PIN",
+    "Avoid obvious PINs such as 123456 or six identical digits",
   );
 export const qty = z.coerce
   .number()
@@ -93,7 +124,12 @@ export const requisitionSchema = z.object({
       z.object({
         description: z.string().trim().min(1).max(200),
         quantity: qty,
-        unit: z.enum(units),
+        unit: z
+          .string()
+          .trim()
+          .min(1)
+          .max(30)
+          .regex(/^[\p{L}\p{N} .()��/\-]+$/u, "Use a short unit name"),
         requiredBy: dateSchema,
       }),
     )
@@ -105,7 +141,10 @@ export const userSchema = z.object({
   phone: phoneSchema,
   role: z.enum(roles),
   siteIds: z.array(z.uuid()).max(100),
-  pin: pinSchema.optional(),
+  pin: z
+    .string()
+    .regex(/^\d{6}$/, "Use six digits")
+    .optional(),
   active: z.boolean().default(true),
 });
 export function itemStatus(i: {

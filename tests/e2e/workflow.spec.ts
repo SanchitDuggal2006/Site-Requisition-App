@@ -39,7 +39,11 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
   await login(page, 3);
   await page.getByRole("button", { name: /18 mm plywood/ }).click();
   await page.getByRole("button", { name: "Mark ordered" }).click();
+  await page.getByLabel(/Quantity \(sheet\)/).fill("14");
   await page.getByLabel("Supplier (optional)").fill("Sample supplier");
+  await page
+    .getByLabel("Supplier / delivery contact (optional)")
+    .fill("Test desk 9000000099");
   await page.getByRole("button", { name: "Confirm", exact: true }).click();
   await page.getByRole("button", { name: "Record dispatch" }).click();
   await page.getByLabel(/Quantity \(sheet\)/).fill("12");
@@ -62,9 +66,11 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
   const pdf = page.waitForEvent("download");
   await page.getByRole("button", { name: "↓ PDF" }).click();
   expect((await pdf).suggestedFilename()).toMatch(/\.pdf$/);
+  await (await pdf).saveAs("test-results/redpeach-report.pdf");
   const excel = page.waitForEvent("download");
   await page.getByRole("button", { name: "↓ Excel" }).click();
   expect((await excel).suggestedFilename()).toMatch(/\.xlsx$/);
+  await (await excel).saveAs("test-results/redpeach-report.xlsx");
   await page.screenshot({
     path: "test-results/report-mobile.png",
     fullPage: true,
@@ -73,6 +79,9 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
   await login(page, 3);
   await page.getByRole("button", { name: "In progress", exact: false }).click();
   await page.getByRole("button", { name: /18 mm plywood/ }).click();
+  await page.getByRole("button", { name: "Order next batch" }).click();
+  await page.getByLabel(/Quantity \(sheet\)/).fill("6");
+  await page.getByRole("button", { name: "Confirm", exact: true }).click();
   await page.getByRole("button", { name: "Record dispatch" }).click();
   await page.getByRole("button", { name: "Confirm", exact: true }).click();
   await expect(
@@ -84,7 +93,9 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
   await page.getByRole("button", { name: /MR-000001/ }).click();
   await page.getByRole("button", { name: "Confirm receipt" }).click();
   await page.getByRole("button", { name: "Confirm", exact: true }).click();
-  await expect(page.getByText("Delivered", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Delivered", { exact: true }).first(),
+  ).toBeVisible();
 });
 test("director can add a site and delegate its approval", async ({ page }) => {
   await login(page, 0);
@@ -174,4 +185,60 @@ test("new team member must change the temporary PIN before accessing a site", as
   await expect(
     page.getByRole("button", { name: /Pilot - Sample Site/ }),
   ).toBeVisible();
+});
+
+test("director switches workspaces, adds a site photo and manager requests a custom unit", async ({
+  page,
+}) => {
+  await login(page, 0);
+  await page.getByLabel("Director workspace").selectOption("PURCHASE");
+  await expect(
+    page.getByRole("heading", { name: "Purchase", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Director workspace").selectOption("MANAGER");
+  await expect(
+    page.getByRole("heading", { name: "Your sites & approvals" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  await page.getByRole("button", { name: "Sites", exact: true }).click();
+  await page.getByRole("button", { name: /Pilot - Second Site/ }).click();
+  await page.getByLabel("Site status").selectOption("TO_START");
+  await page
+    .getByLabel("Site photo (optional)")
+    .setInputFiles("public/redpeach-logo.png");
+  await expect(page.getByAltText("Site preview")).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Edit site" }),
+  ).not.toBeVisible();
+  await logout(page);
+  await login(page, 1);
+  await expect(page.getByLabel("Director workspace")).not.toBeVisible();
+  await page.getByRole("button", { name: /Pilot - Second Site/ }).click();
+  await page.getByRole("button", { name: "+ New requisition" }).click();
+  await page.getByLabel("Material description").fill("Decorative stone");
+  await page.getByLabel("Quantity", { exact: true }).fill("4");
+  await page.getByLabel("Search / type custom unit").fill("pallet");
+  await page
+    .getByRole("combobox", { name: "Unit", exact: true })
+    .selectOption("pallet");
+  await page.getByRole("button", { name: "Submit requisition" }).click();
+  await page.getByRole("button", { name: "Approve requisition" }).click();
+  await expect(
+    page.getByText("Approved", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mark ordered" }),
+  ).not.toBeVisible();
+  await page.getByRole("button", { name: "Report", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Site overview" }),
+  ).toBeVisible();
+  await expect(page.getByAltText("Pilot - Second Site site")).toBeVisible();
+  await page
+    .locator(".site-dashboard")
+    .screenshot({ path: "test-results/redpeach-sites-mobile.png" });
+  await page.screenshot({
+    path: "test-results/redpeach-dashboard-viewport.png",
+  });
 });

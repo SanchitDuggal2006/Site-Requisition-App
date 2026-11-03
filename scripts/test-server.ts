@@ -11,6 +11,14 @@ await db.exec(
     "",
   ),
 );
+for (const file of ["002_director_lock.sql", "003_siteops.sql"]) {
+  await db.exec(
+    (await readFile("db/" + file, "utf8")).replaceAll(
+      "PERFORM pg_advisory_xact_lock(774201);",
+      "",
+    ),
+  );
+}
 const query = async (q: string, p: any[] = []) => {
   const result = await db.query(q, p);
   return result.rows as any[];
@@ -39,6 +47,7 @@ const types: Record<string, string> = {
   ".js": "text/javascript",
   ".css": "text/css",
   ".svg": "image/svg+xml",
+  ".png": "image/png",
 };
 createServer(async (req, res) => {
   try {

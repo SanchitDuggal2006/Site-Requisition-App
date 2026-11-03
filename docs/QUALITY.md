@@ -1,3 +1,17 @@
+# Redpeach SiteOps 0.2 verification
+
+## Update verified 3 November 2026
+
+- Existing-data migration preserves request/item IDs, quantities, versions and the original purchaser on imported order batches.
+- 19 database/API tests pass on the separate Neon test database. Local embedded run: 26 passed, one real-PostgreSQL concurrency test skipped.
+- Six mobile-browser/accessibility tests pass, including the 70% / 30% batch-order workflow, manager self-approval, director workspace selection, photo upload, custom units, full delivery and branded PDF/Excel export.
+- All three sample PDF pages were rendered and visually reviewed; branded headers, tables and page numbers are present. Exported PDF is compressed.
+- A private consistent snapshot was saved before upgrading production. No production PINs or sessions were changed for testing.
+- Android package ID and signing key are retained for in-place updates. The release workflow and emulator evidence record the signed build and upgrade-install checks.
+- Remaining physical checks: install on the team's phones, native PDF/Excel sharing, keyboard, and real network conditions. Automated tests do not establish that every device has been verified.
+
+Older verification history follows; version 0.2 behavior is described in ADMIN_GUIDE.md.
+
 # Quality and release status
 
 ## Verified on 2 November 2026

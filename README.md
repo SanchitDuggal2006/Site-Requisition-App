@@ -1,4 +1,4 @@
-# Site Requisitions
+# Redpeach SiteOps
 
 Android-first material requisitions for an interior fit-out business. Shared Cloudflare API + Neon PostgreSQL, with a React phone interface and Capacitor APK. Includes directors, site-scoped managers/supervisors, purchase, approval history, partial dispatch/receipt, and PDF/XLSX reports.
 
@@ -23,3 +23,5 @@ Use PostgreSQL `pg_dump --format=custom --file=backup.dump "$DATABASE_URL"` on a
 ## Android and operations
 
 See `docs/ANDROID.md` for build/signing, `docs/DEVICE_TEST_CHECKLIST.md` for release validation, and `docs/ADMIN_GUIDE.md` for team onboarding and handover.
+
+Version 0.2 adds Redpeach branding, director workspaces, manager-created requests, purchase visibility only after approval, quantity-based order batches, delivery estimates/status/contact, site lifecycle/photos, searchable custom units and branded reports. Migration 003 preserves legacy orders. The Android application ID and signing key remain unchanged so existing installations can update in place.
