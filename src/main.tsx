@@ -492,7 +492,9 @@ function Workspace({
   }, [route, revision, reportDate, reportSite, user.workspaceRole]);
   const director = user.workspaceRole === "DIRECTOR",
     supervisor = user.workspaceRole === "SUPERVISOR",
-    manager = user.workspaceRole === "MANAGER";
+    manager = user.workspaceRole === "MANAGER",
+    previewingRole =
+      user.role === "DIRECTOR" && user.workspaceRole !== "DIRECTOR";
   if (route.startsWith("/new/")) {
     const site = sites.find((s) => s.id === route.split("/")[2]);
     return site ? (
@@ -518,6 +520,18 @@ function Workspace({
   return (
     <>
       <ErrorBox message={error} />
+      {previewingRole && (
+        <aside className="director-preview" aria-label="Director role preview">
+          <strong>
+            Director preview · {label(user.workspaceRole)} workspace
+          </strong>
+          <span>
+            You are viewing this role’s workflow. Your Director account still
+            retains every permission, and each action is recorded under your
+            Director account.
+          </span>
+        </aside>
+      )}
       {loading && loadedRoute !== route ? (
         <Empty>Loading…</Empty>
       ) : (
@@ -1005,6 +1019,13 @@ function Detail({ detail: d, user, day, timezone, refresh, go, onCopy }: any) {
       </p>
       {d.note && <p className="note">{d.note}</p>}
       <ErrorBox message={error} />
+      {user.role === "SUPERVISOR" && (
+        <p className="role-guidance">
+          Supervisor access: raise requisitions for your assigned sites and
+          confirm receipt. Only a manager or Director can approve; only Purchase
+          or a Director can order.
+        </p>
+      )}
       {d.status === "SUBMITTED" && (
         <div className="actions">
           {(director || user.role === "MANAGER") && (

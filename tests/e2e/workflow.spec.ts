@@ -11,6 +11,25 @@ async function logout(page: Page) {
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 }
+test("director can preview each role workflow without losing Director authority", async ({
+  page,
+}) => {
+  await login(page, 0);
+  const workspace = page.getByLabel("Director workspace");
+  await workspace.selectOption("SUPERVISOR");
+  await expect(page.getByRole("heading", { name: "Your sites" })).toBeVisible();
+  await expect(
+    page.getByText(/Director preview · Supervisor workspace/),
+  ).toBeVisible();
+  await expect(page.getByText(/still retains every permission/i)).toBeVisible();
+  await workspace.selectOption("MANAGER");
+  await expect(
+    page.getByRole("heading", { name: "Your sites & approvals" }),
+  ).toBeVisible();
+  await workspace.selectOption("PURCHASE");
+  await expect(page.getByRole("heading", { name: "Purchase" })).toBeVisible();
+  await logout(page);
+});
 test("request to partial dispatch and confirmed receipt, with downloadable reports", async ({
   page,
 }) => {
@@ -28,6 +47,12 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
   );
   await page.getByRole("button", { name: "Submit requisition" }).click();
   await expect(page.getByRole("heading", { name: "MR-000001" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Approve requisition" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText(/Only a manager or Director can approve/i),
+  ).toBeVisible();
   await logout(page);
   await login(page, 1);
   await page.getByRole("button", { name: /MR-000001/ }).click();
@@ -60,6 +85,9 @@ test("request to partial dispatch and confirmed receipt, with downloadable repor
   await login(page, 2);
   await page.getByRole("button", { name: /Pilot - Sample Site/ }).click();
   await page.getByRole("button", { name: /MR-000001/ }).click();
+  await expect(page.getByRole("button", { name: "Mark ordered" })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "Confirm receipt" }).click();
   await page.getByLabel(/Quantity \(sheet\)/).fill("10");
   await page.getByRole("button", { name: "Confirm", exact: true }).click();

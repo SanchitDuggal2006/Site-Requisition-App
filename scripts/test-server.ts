@@ -42,6 +42,7 @@ for (const [n, role] of [
     await query("INSERT INTO assignments VALUES($1,$2)", [id, site]);
 }
 const app = createApp(query);
+const port = Number(process.env.TEST_PORT || 4173);
 const types: Record<string, string> = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -51,7 +52,7 @@ const types: Record<string, string> = {
 };
 createServer(async (req, res) => {
   try {
-    const url = new URL(req.url || "/", "http://127.0.0.1:4173");
+    const url = new URL(req.url || "/", `http://127.0.0.1:${port}`);
     if (url.pathname.startsWith("/api/")) {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
@@ -89,8 +90,8 @@ createServer(async (req, res) => {
     res.writeHead(500);
     res.end("Test server error");
   }
-}).listen(4173, "127.0.0.1", () =>
-  console.log("Isolated sample app listening on 4173"),
+}).listen(port, "127.0.0.1", () =>
+  console.log(`Isolated sample app listening on ${port}`),
 );
 function requireSeparator() {
   return process.platform === "win32" ? "\\" : "/";

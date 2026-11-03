@@ -142,7 +142,7 @@ describe("database invariants and API", () => {
         .length,
     ).toBe(1);
   });
-  it("rejects unassigned users and inappropriate roles", async () => {
+  it("blocks supervisors from approving or ordering, even through the database API", async () => {
     for (const role of ["outsider", "supervisor", "purchase"])
       await expect(
         query("SELECT transition_requisition($1,$2,'APPROVED','')", [
@@ -150,6 +150,12 @@ describe("database invariants and API", () => {
           req,
         ]),
       ).rejects.toThrow("FORBIDDEN");
+    await expect(
+      query("SELECT transition_item($1,$2,0,'ORDERED',1,'','')", [
+        ids.supervisor,
+        item,
+      ]),
+    ).rejects.toThrow("FORBIDDEN");
   });
   it("approves once with an atomic audit record", async () => {
     await query("SELECT transition_requisition($1,$2,'APPROVED','')", [
